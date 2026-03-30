@@ -10,6 +10,8 @@ from pdf_loader import load_pdf
 from segmenter import segment_into_clauses
 from embedder import embed_clauses
 from comparator import pair_and_compare
+from classifier import classify_batch
+from optimizer import embed_with_cache, deduplicate_for_classification
 
 
 def load_file(filepath: str) -> str:
@@ -50,17 +52,30 @@ def main():
 
     print(f"  Found {len(clauses_v1)} clauses in v1, {len(clauses_v2)} in v2.")
 
-    # Step 3: Embed — extract text from each clause dict
-    print("Generating embeddings...")
-    embeddings_v1 = embed_clauses([c["text"] for c in clauses_v1])
-    embeddings_v2 = embed_clauses([c["text"] for c in clauses_v2])
+    print("Embedding (with cache)...")
+    emb_v1 = embed_with_cache(clauses_v1)
+    emb_v2 = embed_with_cache(clauses_v2)
+
+    print("Comparing...")
+    pairs = pair_and_compare(clauses_v1, emb_v1, clauses_v2, emb_v2)
+
+    print("Classifying changed clauses...")
+    to_classify, already_done = deduplicate_for_classification(pairs)
+    classified = classify_batch(to_classify)
 
     # Step 4: Compare clause pairs
     print("Computing cosine similarity scores...")
-    results = pair_and_compare(clauses_v1, embeddings_v1, clauses_v2, embeddings_v2)
+    results = pair_and_compare(clauses_v1, emb_v1, clauses_v2, emb_v2)
+
+    print("Classifying changed clauses...")
+    to_classify, already_done = deduplicate_for_classification(pairs)
+    classified = classify_batch(to_classify)
+
+    all_results = classified + already_done
+    all_results.sort(key=lambda x: x["clause_index"])
 
     # Step 5: Print the report
-    print_report(results)
+    print_report(all_results)
 
 
 if __name__ == "__main__":
