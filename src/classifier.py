@@ -3,148 +3,172 @@ from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
-
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# ── Change labels the model can choose from ──────────────────────────
 CHANGE_LABELS = [
-    "narrowed_scope",        # obligation/right now covers less
-    "expanded_scope",        # obligation/right now covers more
-    "numeric_change",        # a number changed (amount, days, %)
-    "reversed_burden",       # who bears responsibility flipped
-    "added_obligation",      # new duty introduced
-    "removed_obligation",    # duty eliminated
-    "added_carve_out",       # new exception/exclusion added
-    "removed_carve_out",     # exception removed (tightened)
-    "negation_shift",        # shall → shall not, or vice versa
-    "cosmetic_only",         # wording changed, meaning unchanged
+    "narrowed_scope",
+    "expanded_scope",
+    "numeric_change",
+    "reversed_burden",
+    "added_obligation",
+    "removed_obligation",
+    "added_carve_out",
+    "removed_carve_out",
+    "negation_shift",
 ]
 
-# ── Few-shot examples baked into the prompt ──────────────────────────
-# These teach the model what each label looks like in practice.
-# The more examples you add here, the better it gets. No retraining needed.
 FEW_SHOT_EXAMPLES = """
 Example 1:
 V1: The tenant shall pay rent of $1000 per month.
 V2: The tenant shall pay rent of $1200 per month.
 Label: numeric_change
-Implication: The monthly rent obligation increased by $200, directly increasing tenant's financial burden.
+Implication: Monthly rent increased by $200, directly raising the tenant's financial burden.
 
 Example 2:
 V1: The landlord shall provide 30 days written notice before terminating this agreement.
 V2: The landlord shall provide 14 days written notice before terminating this agreement.
 Label: numeric_change
-Implication: Tenant's protection window before termination was cut in half, significantly reducing their ability to find alternative housing.
+Implication: Tenant's protection window before termination was cut in half, reducing time to find alternative arrangements.
 
 Example 3:
 V1: The tenant is responsible for all utility bills including electricity and water.
 V2: The tenant is responsible for electricity bills only. Water is covered by the landlord.
 Label: narrowed_scope
-Implication: Tenant's financial obligations were narrowed — water costs shifted to the landlord, reducing tenant's recurring expenses.
+Implication: Tenant's financial obligations were narrowed — water costs shifted to the landlord.
 
 Example 4:
 V1: Pets are not permitted on the premises under any circumstances.
-V2: Pets under 10kg are permitted on the premises with prior written approval from the landlord.
+V2: Pets under 10kg are permitted on the premises with prior written approval.
 Label: added_carve_out
-Implication: An absolute prohibition was replaced with a conditional permission, creating a new carve-out for small pets subject to landlord approval.
+Implication: An absolute prohibition was replaced with a conditional permission for small pets.
 
 Example 5:
 V1: The contractor shall not be liable for any indirect or consequential damages.
 V2: The contractor shall be liable for all indirect and consequential damages.
 Label: negation_shift
-Implication: A complete liability exclusion was reversed into full liability — a drastic increase in the contractor's legal exposure.
+Implication: A complete liability exclusion was reversed into full liability — drastically increasing the contractor's legal exposure.
 
 Example 6:
-V1: Either party may terminate this agreement with 60 days written notice.
-V2: Either party may terminate this agreement with 60 days written notice.
-Label: cosmetic_only
-Implication: No meaningful change — the clause is identical in obligation and scope.
+V1: (c) "Affiliate" means any subsidiary of a Party.
+V2: (c) "Affiliate" means any subsidiary or parent company of a Party.
+Label: expanded_scope
+Implication: The definition of Affiliate was broadened to include parent companies, expanding the range of entities covered by the agreement.
 """.strip()
 
-# ── System prompt ─────────────────────────────────────────────────────
-SYSTEM_PROMPT = f"""You are a legal analyst specializing in contract and policy document review.
+SYSTEM_PROMPT = f"""You are a legal analyst specializing in contract review.
 
-Your job: given two versions of a legal clause (V1 = original, V2 = revised), classify the change and explain its legal implication.
+Given two versions of a legal clause (V1 = original, V2 = revised), classify the change and explain its legal implication.
 
-You MUST respond in this exact format — nothing else:
-Label: <one of the labels below>
-Implication: <one sentence, plain English, explaining the legal impact of the change>
+Respond in EXACTLY this format:
+Label: <label>
+Implication: <one sentence explaining who is affected and how>
 
 Available labels: {", ".join(CHANGE_LABELS)}
 
 Rules:
-- If the clause is unchanged or only cosmetically reworded, use cosmetic_only.
-- Focus on the legal/practical impact, not just the linguistic difference.
-- The Implication sentence must explain WHO is affected and HOW (burden increased/decreased, right expanded/removed, etc.)
-- Never add commentary outside the Label/Implication format.
+- Focus on legal/practical impact, not linguistic difference.
+- The implication must state WHO is affected and HOW (burden increased/decreased, right expanded/removed).
+- Never add text outside the Label/Implication format.
 
-Here are examples of correct classifications:
-
+Examples:
 {FEW_SHOT_EXAMPLES}
 """
 
+ADDED_PROMPT = """You are a legal analyst. A new clause was added to a revised document that did not exist in the original.
 
-def classify_change(text_v1: str, text_v2: str) -> dict:
-    """
-    Sends a clause pair to the LLM and returns a classification dict:
-      - label: one of the CHANGE_LABELS
-      - implication: plain-English legal impact sentence
-      - raw: the full model response (for debugging)
+Clause text: {text}
 
-    Uses Groq's llama3-8b-instruct — free, fast, good enough for this task.
-    Swap to claude-3-haiku or gpt-4o-mini if you want higher accuracy.
-    """
-    user_message = f"V1: {text_v1}\nV2: {text_v2}"
+Respond in EXACTLY this format:
+Implication: <one sentence explaining what new obligation, right, or restriction this clause introduces and who it affects>
+"""
 
+REMOVED_PROMPT = """You are a legal analyst. A clause from the original document was removed entirely in the revised version.
+
+Clause text: {text}
+
+Respond in EXACTLY this format:
+Implication: <one sentence explaining what obligation, right, or protection was lost by removing this clause and who is affected>
+"""
+
+
+def _call_llm(system: str, user: str) -> str:
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="llama3-8b-8192",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": user_message},
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
         ],
-        temperature=0.1,      # low temp = consistent, deterministic output
+        temperature=0.1,
         max_tokens=120,
     )
-
-    raw = response.choices[0].message.content.strip()
-    return _parse_response(raw)
+    return response.choices[0].message.content.strip()
 
 
-def _parse_response(raw: str) -> dict:
-    """
-    Parses the model's Label/Implication response into a clean dict.
-    Falls back gracefully if the model didn't follow the format exactly.
-    """
+def _parse_changed(raw: str) -> tuple[str, str]:
+    """Parses Label + Implication from a changed-clause response."""
     label = "unknown"
-    implication = raw  # fallback: return raw if parsing fails
-
+    implication = raw
     for line in raw.splitlines():
         line = line.strip()
         if line.lower().startswith("label:"):
-            label = line.split(":", 1)[1].strip().lower().replace(" ", "_")
+            candidate = line.split(":", 1)[1].strip().lower().replace(" ", "_")
+            if candidate in CHANGE_LABELS:
+                label = candidate
         elif line.lower().startswith("implication:"):
             implication = line.split(":", 1)[1].strip()
+    return label, implication
 
-    # Validate label — if model hallucinated something, default to unknown
-    if label not in CHANGE_LABELS:
-        label = "unknown"
 
-    return {"label": label, "implication": implication, "raw": raw}
+def _parse_implication_only(raw: str) -> str:
+    """Parses just the Implication line from an added/removed response."""
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.lower().startswith("implication:"):
+            return line.split(":", 1)[1].strip()
+    return raw
 
 
 def classify_batch(pairs: list[dict]) -> list[dict]:
     """
-    Runs classify_change() on a list of comparator result dicts.
-    Only classifies pairs where changed=True — skips unchanged ones.
-    Adds 'label' and 'implication' keys to each dict in-place.
-    Returns the enriched list.
+    Classifies each result dict based on its result_type:
+      - 'changed'  → ask LLM to label + explain the change
+      - 'added'    → ask LLM to explain what the new clause introduces
+      - 'removed'  → ask LLM to explain what was lost
+
+    Mutates each dict in-place, adding 'label' and 'implication'.
+    Returns the same list.
     """
     for pair in pairs:
-        if pair["changed"]:
-            result = classify_change(pair["v1"], pair["v2"])
-            pair["label"] = result["label"]
-            pair["implication"] = result["implication"]
-        else:
-            pair["label"] = "cosmetic_only"
-            pair["implication"] = "No meaningful change detected."
+        rtype = pair.get("result_type", "changed")
+
+        try:
+            if rtype == "changed":
+                raw = _call_llm(
+                    SYSTEM_PROMPT,
+                    f"V1: {pair['v1']}\nV2: {pair['v2']}"
+                )
+                label, impl = _parse_changed(raw)
+                pair["label"]       = label
+                pair["implication"] = impl
+
+            elif rtype == "added":
+                raw = _call_llm(
+                    "You are a legal analyst.",
+                    ADDED_PROMPT.format(text=pair["v2"])
+                )
+                pair["label"]       = "added_obligation"
+                pair["implication"] = _parse_implication_only(raw)
+
+            elif rtype == "removed":
+                raw = _call_llm(
+                    "You are a legal analyst.",
+                    REMOVED_PROMPT.format(text=pair["v1"])
+                )
+                pair["label"]       = "removed_obligation"
+                pair["implication"] = _parse_implication_only(raw)
+
+        except Exception as e:
+            pair["label"]       = "unknown"
+            pair["implication"] = f"Classification failed: {e}"
+
     return pairs
