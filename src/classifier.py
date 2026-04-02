@@ -93,7 +93,7 @@ Implication: <one sentence explaining what obligation, right, or protection was 
 
 def _call_llm(system: str, user: str) -> str:
     response = client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": user},
