@@ -1,3 +1,6 @@
-openai
+groq
 numpy
 python-dotenv
+pdfplumber
+sentence-transformers
+torch
