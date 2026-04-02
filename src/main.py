@@ -95,8 +95,8 @@ def print_report(results: list[dict]):
 def main():
     t0 = time.time()
 
-    PATH_V1 = "sample_docs/contract_v1.txt"
-    PATH_V2 = "sample_docs/contract_v2.txt"
+    PATH_V1 = "sample_docs/contract_v1.pdf"
+    PATH_V2 = "sample_docs/contract_v2.pdf"
 
     print("\n[1/5] Loading documents...")
     doc_v1 = _load_file(PATH_V1)

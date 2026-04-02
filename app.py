@@ -114,46 +114,62 @@ def render_card(r: dict):
     score = r["similarity"]
     impl  = r.get("implication", "")
     flags = r.get("reasons", [])
+    label_display = label.replace("_", " ").upper()
 
-    # Build inner HTML based on result type
+    # ── Badge + type tag ──────────────────────────────────────────────
+    badge = f'<span class="badge badge-{label}">{label_display}</span>'
+
     if rtype == "added":
-        type_tag   = "<span class='rtype-added'>✚ NEW CLAUSE</span>"
-        score_part = ""   # no score for added (no v1 match)
-        text_part  = f"<div class='text-only'>▸ {r['v2']}</div>"
+        type_tag = '<span class="rtype-added">✚ NEW CLAUSE</span>'
     elif rtype == "removed":
-        type_tag   = "<span class='rtype-removed'>✖ REMOVED CLAUSE</span>"
-        score_part = ""
-        text_part  = f"<div class='text-only'>▸ {r['v1']}</div>"
+        type_tag = '<span class="rtype-removed">✖ REMOVED CLAUSE</span>'
     else:
-        type_tag   = ""
-        score_part = f"<span class='score'>similarity: {score:.4f}</span>"
-        text_part  = (
-            f"<div class='text-v1'>▸ V1: {r['v1']}</div>"
-            f"<div class='text-v2'>▸ V2: {r['v2']}</div>"
+        type_tag = ''
+
+    # ── Score line (only for changed pairs, not added/removed) ────────
+    if rtype == "changed":
+        score_line = f'<div class="score">similarity: {score:.4f}</div>'
+    else:
+        score_line = ''
+
+    # ── Flags line (only for changed, when flags exist) ───────────────
+    if flags and rtype == "changed":
+        flags_text = ", ".join(flags)
+        flags_line = f'<div class="flags">flags: {flags_text}</div>'
+    else:
+        flags_line = ''
+
+    # ── Clause text ───────────────────────────────────────────────────
+    if rtype == "removed":
+        text_block = f'<div class="text-only">&#9656; {r["v1"]}</div>'
+    elif rtype == "added":
+        text_block = f'<div class="text-only">&#9656; {r["v2"]}</div>'
+    else:
+        v1_safe = r["v1"].replace('"', '&quot;')
+        v2_safe = r["v2"].replace('"', '&quot;')
+        text_block = (
+            f'<div class="text-v1">&#9656; V1: {v1_safe}</div>'
+            f'<div class="text-v2">&#9656; V2: {v2_safe}</div>'
         )
 
-    flag_part = (
-        f"<div class='flags'>flags: {', '.join(flags)}</div>"
-        if flags and rtype == "changed" else ""
+    # ── Implication ───────────────────────────────────────────────────
+    if impl:
+        impl_block = f'<div class="implication">&#10230; {impl}</div>'
+    else:
+        impl_block = ''
+
+    # ── Assemble card — all parts are clean strings, no nesting ───────
+    card = (
+        f'<div class="clause-card {rtype}">'
+        f'  {badge}{type_tag}'
+        f'  {score_line}'
+        f'  {flags_line}'
+        f'  {text_block}'
+        f'  {impl_block}'
+        f'</div>'
     )
 
-    impl_part = (
-        f"<div class='implication'>⟶ {impl}</div>"
-        if impl else ""
-    )
-
-    html = f"""
-    <div class="clause-card {rtype}">
-        <span class="badge badge-{label}">{label.replace("_"," ")}</span>
-        {type_tag}
-        {score_part}
-        {flag_part}
-        {text_part}
-        {impl_part}
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
+    st.markdown(card, unsafe_allow_html=True)
 
 # ── Layout ────────────────────────────────────────────────────────────
 
