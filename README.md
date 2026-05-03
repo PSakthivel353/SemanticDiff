@@ -115,7 +115,7 @@ semantic_diff/
 
 **`segmenter.py`** — detects clause boundaries using a regex pattern that covers all common legal numbering formats: `1.`, `1.2`, `1.2.3`, `(a)`, `(i)`, `(A)`, `Article 1`, `Section 2.1`, `WHEREAS`, `Schedule A`. Multi-line clauses are accumulated until the next header is detected. Returns structured dicts with `text`, `label`, and nesting `level`.
 
-**`embedder.py`** — loads `all-MiniLM-L6-v2` once at module import time (avoiding the 60–90s reload on every run) and converts a list of clause strings into embedding vectors.
+**`embedder.py`** — loads `llama-3.1-8b-instant` once at module import time (avoiding the 60–90s reload on every run) and converts a list of clause strings into embedding vectors.
 
 **`comparator.py`** — builds a full `(n × m)` cosine similarity matrix between all v1 and v2 clause embeddings using vectorised numpy. For each v1 clause, finds the best-matching v2 clause. Applies a match threshold (0.50) — unmatched clauses are flagged as removed/added. Applies an unchanged threshold (0.97) and numeric/negation guards — only truly changed pairs are returned.
 
